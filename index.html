@@ -1,0 +1,268 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tradutor de PDF para Word</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Biblioteca PDF.js da Mozilla para ler arquivos PDF -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.min.js"></script>
+    <style>
+        /* Define a fonte Inter para todo o corpo do documento */
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        /* Estilo para o botão de upload de arquivo personalizado */
+        .file-input-button {
+            cursor: pointer;
+            padding: 0.75rem 1.5rem;
+            background-color: #4f46e5;
+            color: white;
+            border-radius: 0.5rem;
+            transition: background-color 0.3s;
+        }
+        .file-input-button:hover {
+            background-color: #4338ca;
+        }
+        /* Esconde o input de arquivo padrão */
+        #pdf-upload {
+            display: none;
+        }
+    </style>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+</head>
+<body class="bg-gray-900 text-white flex items-center justify-center min-h-screen p-4">
+
+    <div class="bg-gray-800 p-8 rounded-2xl shadow-2xl w-full max-w-2xl text-center">
+        <!-- Cabeçalho da Aplicação -->
+        <div class="mb-8">
+            <h1 class="text-4xl font-bold text-indigo-400 mb-2">Tradutor de PDF para Word</h1>
+            <p class="text-gray-400">Carregue um PDF, traduza o conteúdo para Português (Brasil) e baixe como .doc.</p>
+        </div>
+
+        <!-- Área de Upload -->
+        <div class="mb-6">
+            <input type="file" id="pdf-upload" accept=".pdf">
+            <label for="pdf-upload" class="file-input-button inline-block">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6 inline-block mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                    <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                </svg>
+                Selecionar PDF
+            </label>
+            <p id="file-name" class="mt-4 text-gray-500">Nenhum arquivo selecionado.</p>
+        </div>
+
+        <!-- Botão de Ação Principal -->
+        <button id="translate-button" class="bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-8 rounded-lg w-full text-lg transition-all duration-300 disabled:bg-gray-600 disabled:cursor-not-allowed" disabled>
+            Traduzir e Baixar
+        </button>
+
+        <!-- Área de Status e Progresso -->
+        <div id="status" class="mt-6 text-indigo-300 h-6"></div>
+
+        <!-- Aviso de Direitos Autorais -->
+        <div class="mt-8 pt-6 border-t border-gray-700">
+            <h3 class="text-lg font-semibold text-yellow-400">Aviso Importante</h3>
+            <p class="text-sm text-gray-500 mt-2">
+                Esta ferramenta é destinada estritamente para **uso pessoal e fins de estudo**. Ao utilizar este serviço, você confirma que possui os direitos necessários sobre o documento ou que seu uso se enquadra nas leis de uso justo (*fair use*). A responsabilidade pelo respeito aos direitos autorais do material carregado é inteiramente sua.
+            </p>
+        </div>
+    </div>
+
+    <script>
+        // Configuração do worker para o PDF.js
+        pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.11.338/pdf.worker.min.js`;
+
+        // Elementos da UI
+        const uploadInput = document.getElementById('pdf-upload');
+        const translateButton = document.getElementById('translate-button');
+        const fileNameDisplay = document.getElementById('file-name');
+        const statusDisplay = document.getElementById('status');
+
+        let pdfFile = null;
+
+        // Event listener para o input de arquivo
+        uploadInput.addEventListener('change', (event) => {
+            pdfFile = event.target.files[0];
+            if (pdfFile) {
+                fileNameDisplay.textContent = `Arquivo: ${pdfFile.name}`;
+                translateButton.disabled = false;
+                statusDisplay.textContent = 'Arquivo pronto para tradução.';
+            } else {
+                fileNameDisplay.textContent = 'Nenhum arquivo selecionado.';
+                translateButton.disabled = true;
+                statusDisplay.textContent = '';
+            }
+        });
+        
+        // Event listener para o botão de tradução
+        translateButton.addEventListener('click', handleTranslation);
+
+        /**
+         * Função principal que gerencia o processo de tradução.
+         */
+        async function handleTranslation() {
+            if (!pdfFile) {
+                alert('Por favor, selecione um arquivo PDF primeiro.');
+                return;
+            }
+
+            translateButton.disabled = true;
+            statusDisplay.textContent = 'Iniciando processo...';
+
+            try {
+                // 1. Extrair texto do PDF
+                const text = await extractTextFromPDF(pdfFile);
+                if (!text) {
+                   throw new Error("Não foi possível extrair texto do PDF. O arquivo pode conter apenas imagens.");
+                }
+
+                // 2. Traduzir o texto extraído
+                const translatedText = await translateText(text);
+
+                // 3. Gerar e baixar o arquivo Word
+                statusDisplay.textContent = 'Tradução concluída. Gerando arquivo Word...';
+                generateAndDownloadDoc(translatedText, `traduzido_${pdfFile.name.replace('.pdf', '')}.doc`);
+                
+                statusDisplay.textContent = 'Processo concluído com sucesso!';
+
+            } catch (error) {
+                console.error('Erro no processo de tradução:', error);
+                statusDisplay.textContent = `Erro: ${error.message}`;
+                alert(`Ocorreu um erro: ${error.message}`);
+            } finally {
+                // Reabilita o botão, mas mantém o arquivo selecionado para nova tentativa se necessário
+                if(pdfFile) translateButton.disabled = false;
+            }
+        }
+
+        /**
+         * Extrai todo o texto de um arquivo PDF.
+         * @param {File} file - O arquivo PDF carregado pelo usuário.
+         * @returns {Promise<string>} O texto extraído de todas as páginas.
+         */
+        async function extractTextFromPDF(file) {
+            const reader = new FileReader();
+            
+            return new Promise((resolve, reject) => {
+                reader.onload = async (event) => {
+                    try {
+                        const typedarray = new Uint8Array(event.target.result);
+                        const pdf = await pdfjsLib.getDocument(typedarray).promise;
+                        let fullText = '';
+                        
+                        for (let i = 1; i <= pdf.numPages; i++) {
+                            statusDisplay.textContent = `Lendo PDF (Página ${i} de ${pdf.numPages})...`;
+                            const page = await pdf.getPage(i);
+                            const textContent = await page.getTextContent();
+                            const pageText = textContent.items.map(item => item.str).join(' ');
+                            fullText += pageText + '\n\n'; // Adiciona quebra de linha dupla entre páginas
+                        }
+                        resolve(fullText);
+                    } catch (error) {
+                        reject(error);
+                    }
+                };
+                reader.onerror = reject;
+                reader.readAsArrayBuffer(file);
+            });
+        }
+
+        /**
+         * Traduz o texto usando a API do Gemini.
+         * O texto é dividido em pedaços para evitar limites da API.
+         * @param {string} textToTranslate - O texto completo a ser traduzido.
+         * @returns {Promise<string>} O texto traduzido.
+         */
+        async function translateText(textToTranslate) {
+            // Divide o texto em parágrafos para processar em pedaços
+            const chunks = textToTranslate.split('\n\n').filter(chunk => chunk.trim() !== '');
+            let translatedText = '';
+
+            for (let i = 0; i < chunks.length; i++) {
+                const chunk = chunks[i];
+                statusDisplay.textContent = `Traduzindo parte ${i + 1} de ${chunks.length}...`;
+                
+                const prompt = `Translate the following English text to Brazilian Portuguese. Preserve the original paragraph structure and formatting as much as possible:\n\n"${chunk}"`;
+
+                try {
+                    const apiKey = ""; // A chave da API será fornecida pelo ambiente em tempo de execução
+                    const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${apiKey}`;
+                    
+                    const payload = {
+                        contents: [{
+                            parts: [{ text: prompt }]
+                        }]
+                    };
+
+                    const response = await fetch(apiUrl, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        const errorBody = await response.text();
+                        throw new Error(`API Error: ${response.status} ${response.statusText} - ${errorBody}`);
+                    }
+
+                    const result = await response.json();
+                    
+                    if (result.candidates && result.candidates[0] && result.candidates[0].content.parts[0]) {
+                        const translatedChunk = result.candidates[0].content.parts[0].text;
+                        translatedText += translatedChunk + '\n\n';
+                    } else {
+                        // Se a API não retornar nada para um pedaço, mantém o original para não perder conteúdo
+                        translatedText += chunk + '\n\n'; 
+                        console.warn(`A tradução para a parte ${i+1} falhou ou retornou vazia. Mantendo o texto original.`);
+                    }
+
+                } catch (error) {
+                    console.error(`Erro ao traduzir a parte ${i + 1}:`, error);
+                    // Em caso de erro, adiciona o pedaço original para não perder dados
+                    translatedText += `\n\n--- ERRO NA TRADUÇÃO DO TRECHO ABAIXO ---\n${chunk}\n--- FIM DO TRECHO COM ERRO ---\n\n`;
+                }
+            }
+
+            return translatedText;
+        }
+
+        /**
+         * Gera um arquivo .doc a partir de uma string de texto e inicia o download.
+         * @param {string} text - O conteúdo de texto para o documento.
+         * @param {string} filename - O nome do arquivo a ser baixado.
+         */
+        function generateAndDownloadDoc(text, filename) {
+            // Formata o texto para HTML, substituindo quebras de linha por parágrafos
+            const htmlContent = `
+                <!DOCTYPE html>
+                <html>
+                <head>
+                    <meta charset="UTF-8">
+                    <title>${filename}</title>
+                </head>
+                <body>
+                    ${text.split('\n\n').map(p => `<p>${p.replace(/\n/g, '<br>')}</p>`).join('')}
+                </body>
+                </html>
+            `;
+            
+            const blob = new Blob(['\ufeff', htmlContent], {
+                type: 'application/msword;charset=utf-8'
+            });
+            
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+
+    </script>
+</body>
+</html>
